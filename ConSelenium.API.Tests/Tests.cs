@@ -145,6 +145,86 @@ namespace ConSelenium.API.Tests
             }
         }
 
+        [Test]
+        public async Task WhenUserCreatesOrderShouldBeCreated()
+        {
+            //Arrange
+            var client = new RestClient("https://apiconselenium.yellowbeach-db27f695.westeurope.azurecontainerapps.io/");
+
+            var rand = new Random();
+            var addUserRequest = new RestRequest("api/v1/users");
+            var newUsername = $"testUsername-{rand.Next()}";
+            var newPassword = "testPassword";
+            var addUser = new UserRequest
+            {
+                Name = "TestUser",
+                Surname = "TestuserSurname",
+                UserName = newUsername,
+                Password = newPassword,
+                Email = $"test-{rand.Next()}@mail.com",
+                Address = new Address
+                {
+                    City = "Krakow",
+                    Street = "Pawia",
+                    HouseNumber = "1a",
+                    PostalCode = "31-001"
+                }
+            };
+            addUserRequest.AddBody(addUser);
+            var addUserResponse = await client.ExecutePostAsync<Created>(addUserRequest);
+            var createdUserId = addUserResponse?.Data?.Id;
+            var request = new RestRequest("api/v1/account/login");
+            request.AddBody(new UserCredential
+            {
+                UserName = "admin",
+                Password = "admin"
+            });
+            var tokenResponse = await client.ExecutePostAsync<Token>(request);
+
+            var addProductRequest = new RestRequest("api/v1/products");
+            var addProduct = new Product
+            {
+                Name = "Sukienka",
+                Description = "Fajna",
+                Price = 20.0,
+                Stock = 100
+            };
+            addProductRequest.AddBody(addProduct);
+            client.Authenticator = new JwtAuthenticator(tokenResponse.Data.AccessToken);
+
+            var addProductResponse = await client.ExecutePostAsync<Created>(addProductRequest);
+
+            var requestLogin = new RestRequest("api/v1/account/login");
+            requestLogin.AddBody(new UserCredential
+            {
+                UserName = newUsername,
+                Password = newPassword
+            });
+
+            var tokenUserResponse = await client.ExecutePostAsync<Token>(requestLogin);
+            client.Authenticator = new JwtAuthenticator(tokenUserResponse.Data.AccessToken);
+
+            var orderRequest = new RestRequest($"api/v1/users/{createdUserId}/orders");
+            orderRequest.AddBody(new
+            {
+                OrderProducts = new[] {
+                    new {
+                        ProductId = addProductResponse.Data.Id,
+                        Quantity = 10
+                    }
+                }
+            });
+
+            //Act
+            var orderResponse = await client.ExecutePostAsync<Created>(orderRequest);
+
+            //Assert
+            var ordersRequest = new RestRequest($"api/v1/users/{createdUserId}/orders/{orderResponse.Data.Id}");
+            var ordersResponse = await client.ExecuteGetAsync<OrderResponse>(ordersRequest);
+            ordersResponse.Data.Id.Should().BeGreaterThan(0);
+        }
+
+
         [TearDown] //wywo³ywane po ka¿dym zakoñczonym teœcie
         public void TearDown()
         {
